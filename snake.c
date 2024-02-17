@@ -108,6 +108,27 @@ void draw_head(pos *loc) {
 void draw_body(pos *loc) { mvwprintw(board, loc->y, loc->x, "#"); }
 
 void clear_print(pos *loc) { mvwprintw(board, loc->y, loc->x, " "); }
+void add_segment() {
+  tail_len++;
+  pos new_tail;
+  new_tail.x = snake[tail_len - 1].x;
+  new_tail.y = snake[tail_len - 1].y;
+  switch (current_dir) {
+  case UP:
+    new_tail.y++;
+    break;
+  case DOWN:
+    new_tail.y--;
+    break;
+  case LEFT:
+    new_tail.x++;
+    break;
+  case RIGHT:
+    new_tail.x--;
+    break;
+  }
+  snake[tail_len] = new_tail;
+}
 
 void input_handler(char ch) {
   if ((ch == 'l' || ch == 'L' || ch == KEY_RIGHT || ch == 'D' || ch == 'd') &&
@@ -127,6 +148,9 @@ void input_handler(char ch) {
     current_dir = UP;
   } else if ((ch == KEY_EXIT) || ch == 'q' || ch == 'e') {
     game_over = true;
+
+  } else if ((ch == 'p' || ch == 'P')) {
+    add_segment();
   }
 }
 void move_snake() {
@@ -134,66 +158,51 @@ void move_snake() {
   head_next.y = snake[0].y;
 
   switch (current_dir) {
-    case UP:
-      head_next.y--;
-      break;
-    case DOWN:
-      head_next.y++;
-      break;
-    case LEFT:
-      head_next.x--;
-      break;
-    case RIGHT:
-      head_next.x++;
-      break;
+  case UP:
+    head_next.y--;
+    break;
+  case DOWN:
+    head_next.y++;
+    break;
+  case LEFT:
+    head_next.x--;
+    break;
+  case RIGHT:
+    head_next.x++;
+    break;
   }
 
   // Check if the new head position is valid
-  if (head_next.x >= 0 && head_next.x < xMax/2 + 10 && head_next.y >= 0 &&
-      head_next.y < yMax/2 + 10) {
+  int collision = 0;
+  if (head_next.x >= 0 && head_next.x < xMax / 2 + 10 && head_next.y >= 0 &&
+      head_next.y < yMax / 2 + 10) {
     // Check if the new head position is not colliding with the snake's body
-    bool collision = false;
     for (int i = 1; i <= tail_len; i++) {
       if (head_next.x == snake[i].x && head_next.y == snake[i].y) {
-        collision = true;
+        int collision = 1;
         break;
       }
     }
-
-    if (!collision) {
-      // Move the snake by shifting each body segment
-      for (int i = tail_len; i > 0; i--) {
-        snake[i] = snake[i - 1];
-      }
-      snake[0] = head_next;
-    }
+  } else {
+    collision = 1;
   }
+
+  if (!collision) {
+    // Move the snake by shifting each body segment
+    for (int i = tail_len; i > 0; i--) {
+      snake[i] = snake[i - 1];
+    }
+    snake[0] = head_next;
+  } else {
+    game_over = 1;
+  };
+
   if (head_next.x == food.x && head_next.y == food.y) {
-    tail_len++;
-    score++;
-    pos new_tail;
-    new_tail.x = snake[tail_len-1].x;
-    new_tail.y = snake[tail_len-1].y;
-    switch(current_dir) {
-      case UP:
-        new_tail.y++;
-        break;
-      case DOWN:
-        new_tail.y--;
-        break;
-      case LEFT:
-        new_tail.x++;
-        break;
-      case RIGHT:
-        new_tail.x--;
-        break;
-    }
-    snake[tail_len] = new_tail;
     spawn_food();
+    add_segment();
+    score++;
   }
-  
 }
-
 
 void draw_screen() {
   box(board, 0, 0);
@@ -230,7 +239,7 @@ int main() {
       draw_head(&head);
       input_handler(
           getch()); // handling inputs in a separate function for code clarity
-            move_snake();
+      move_snake();
 
       draw_screen();
     }
