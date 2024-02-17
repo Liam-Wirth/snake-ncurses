@@ -1,6 +1,9 @@
 #include <curses.h>
 #include <ncurses.h>
 #include <time.h>
+#include <unistd.h>
+#define DELAY 30000
+#define TIMEOUT 10
 
 typedef enum {
   UP,
@@ -23,13 +26,17 @@ typedef struct {
 
 pos food;
 pos snake[511] = {};
+pos old_snake[511] = {};
+pos head;
+pos head_next;
 rng_stuff rng = {0};
 int xMax, yMax;
+int score = 0;
 
 int tail_len;
 direction current_dir;
 WINDOW *board;
-
+int game_over = 0;
 pos board_dim;
 
 int rng_rand() {
@@ -41,9 +48,11 @@ int rng_rand() {
 }
 void init_curses() {
   initscr();
+  nodelay(stdscr, TRUE);
   noecho();
   cbreak();
   keypad(stdscr, TRUE);
+  timeout(TIMEOUT);
   curs_set(0);
   start_color();
   refresh();
@@ -63,49 +72,178 @@ void init_curses() {
   box(board, 0, 0);
   wrefresh(board);
 }
+void draw_food() {
+  wattron(board, COLOR_PAIR(2));
+  mvwprintw(board, food.y, food.x, "o");
+  wattroff(board, COLOR_PAIR(2));
+  wrefresh(board);
+}
+
+void spawn_food() {
+  food.x = ((rng_rand() % (xMax / 2)) + 10);
+  food.y = ((rng_rand() % (yMax / 2)) + 10);
+  draw_food();
+}
+
 void init() {
   rng.seed = (int)time(NULL);
   rng.multiplier = 1103515245;
   rng.increment = 12345;
   rng.modulus = 0x8000000;
-
+  spawn_food();
   current_dir = RIGHT;
-  int tail_len = 0;
+  tail_len = 0;
+  head.x = 10;
+  head.y = 10;
+  snake[0] = head;
 }
 
-void drawHead(pos *loc) {
-  attron(COLOR_PAIR(1));
-  mvprintw(loc->y, loc->x, "0");
-  attroff(COLOR_PAIR(1));
+void draw_head(pos *loc) {
+  wattron(board, COLOR_PAIR(1));
+  mvwprintw(board, loc->y, loc->x, "0");
+  wattroff(board, COLOR_PAIR(1));
   wrefresh(board);
 }
 
-void spawnFood() {
-  food.x = ((rng_rand() % (xMax / 2)) + 10);
-  food.y = ((rng_rand() % (yMax / 2)) + 10);
-  attron(COLOR_PAIR(2));
-  mvprintw(food.y, food.x, "o");
-  attroff(COLOR_PAIR(2));
-  wrefresh(board);
+void draw_body(pos *loc) { mvwprintw(board, loc->y, loc->x, "#"); }
+
+void clear_print(pos *loc) { mvwprintw(board, loc->y, loc->x, " "); }
+
+void input_handler(char ch) {
+  if ((ch == 'l' || ch == 'L' || ch == KEY_RIGHT || ch == 'D' || ch == 'd') &&
+      (current_dir != RIGHT && current_dir != LEFT)) {
+    current_dir = RIGHT;
+  } else if ((ch == 'h' || ch == 'H' || ch == KEY_LEFT || ch == 'A' ||
+              ch == 'a') &&
+             (current_dir != RIGHT && current_dir != LEFT)) {
+    current_dir = LEFT;
+  } else if ((ch == 'j' || ch == 'J' || ch == KEY_DOWN || ch == 's' ||
+              ch == 'S') &&
+             (current_dir != UP && current_dir != DOWN)) {
+    current_dir = DOWN;
+  } else if ((ch == 'k' || ch == 'K' || ch == KEY_UP || ch == 'W' ||
+              ch == 'w') &&
+             (current_dir != UP && current_dir != DOWN)) {
+    current_dir = UP;
+  } else if ((ch == KEY_EXIT) || ch == 'q' || ch == 'e') {
+    game_over = true;
+  }
+}
+void move_snake() {
+  head_next.x = snake[0].x;
+  head_next.y = snake[0].y;
+
+  switch (current_dir) {
+    case UP:
+      head_next.y--;
+      break;
+    case DOWN:
+      head_next.y++;
+      break;
+    case LEFT:
+      head_next.x--;
+      break;
+    case RIGHT:
+      head_next.x++;
+      break;
+  }
+
+  // Check if the new head position is valid
+  if (head_next.x >= 0 && head_next.x < xMax/2 + 10 && head_next.y >= 0 &&
+      head_next.y < yMax/2 + 10) {
+    // Check if the new head position is not colliding with the snake's body
+    bool collision = false;
+    for (int i = 1; i <= tail_len; i++) {
+      if (head_next.x == snake[i].x && head_next.y == snake[i].y) {
+        collision = true;
+        break;
+      }
+    }
+
+    if (!collision) {
+      // Move the snake by shifting each body segment
+      for (int i = tail_len; i > 0; i--) {
+        snake[i] = snake[i - 1];
+      }
+      snake[0] = head_next;
+    }
+  }
+  if (head_next.x == food.x && head_next.y == food.y) {
+    tail_len++;
+    score++;
+    pos new_tail;
+    new_tail.x = snake[tail_len-1].x;
+    new_tail.y = snake[tail_len-1].y;
+    switch(current_dir) {
+      case UP:
+        new_tail.y++;
+        break;
+      case DOWN:
+        new_tail.y--;
+        break;
+      case LEFT:
+        new_tail.x++;
+        break;
+      case RIGHT:
+        new_tail.x--;
+        break;
+    }
+    snake[tail_len] = new_tail;
+    spawn_food();
+  }
+  
+}
+
+
+void draw_screen() {
+  box(board, 0, 0);
+  mvprintw(1, 2, "       ");
+  mvprintw(1, 2, "Score: %i", score);
+  mvprintw(1, xMax - 20, "Tail_pos: %i, %i", snake[tail_len].x,
+           snake[tail_len].y);
+  for (int i = 0; i <= tail_len; i++) {
+    if (i == 0) {
+      draw_head(&snake[i]);
+    } else {
+      draw_body(&snake[i]);
+    }
+    clear_print(&old_snake[i]);
+    old_snake[i] = snake[i];
+  };
+  draw_food();
+  refresh();
+  usleep(DELAY * 2);
 }
 int main() {
   init_curses();
   init();
-  int count = 0;
   while (1) {
-    if (count == 20) {
+    if (game_over) {
+      clear();
+      printw("Womp Womp! Game Over!");
+      refresh();
+      nodelay(stdscr, FALSE);
+      getch();
       break;
-    }
-    mvprintw(food.y, food.x, " ");
-    spawnFood();
-    pos loc = {20, 20};
-    drawHead(&loc);
+    } else {
 
-    getch();
-    count++;
+      draw_head(&head);
+      input_handler(
+          getch()); // handling inputs in a separate function for code clarity
+            move_snake();
+
+      draw_screen();
+    }
   }
 
   endwin(); // Restore normal terminal behavior
   nocbreak();
+  printf("%d %d\n", xMax, yMax);
+  printf("%d %d\n", snake[0].x, snake[0].y);
+  for (int i = 0; i < tail_len; i++) {
+    printf("index %d, X %d, Y %d \n", i, snake[i], snake[i].x, snake[i].y);
+    printf("OLD index %d, X %d, Y %d \n", i, old_snake[i], old_snake[i].x,
+           old_snake[i].y);
+  }
   return 0;
 }
