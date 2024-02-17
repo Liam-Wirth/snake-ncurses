@@ -174,29 +174,23 @@ void move_snake() {
 
   // Check if the new head position is valid
   int collision = 0;
-  if (head_next.x >= 0 && head_next.x < (xMax -10) && head_next.y >= 0 &&
-      head_next.y < (yMax -5) ) {
+  if (head_next.x >= 0 && head_next.x < (xMax - 10) && head_next.y >= 0 &&
+      head_next.y < (yMax - 5)) {
     // Check if the new head position is not colliding with the snake's body
     for (int i = 1; i <= tail_len; i++) {
       if (head_next.x == snake[i].x && head_next.y == snake[i].y) {
         int collision = 1;
         break;
+        if (!collision) {
+          snake[i] = snake[i - 1];
+        }
       }
     }
   } else {
-    collision = 1;
   }
 
-  if (!collision) {
-    // Move the snake by shifting each body segment
-    for (int i = tail_len; i > 0; i--) {
-      snake[i] = snake[i - 1];
-    }
     snake[0] = head_next;
-  } else {
-    game_over = 1;
-  };
-
+  } 
   if (head_next.x == food.x && head_next.y == food.y) {
     spawn_food();
     add_segment();
