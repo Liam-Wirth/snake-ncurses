@@ -1,3 +1,4 @@
+#include "linkedlist.h"
 #include <curses.h>
 #include <ncurses.h>
 #include <time.h>
@@ -25,9 +26,7 @@ typedef struct {
 } rng_stuff;
 
 pos food;
-pos snake[511] = {};
-pos old_snake[511] = {};
-pos head;
+Node *head = NULL;
 pos head_next;
 rng_stuff rng = {0};
 int xMax, yMax;
@@ -93,41 +92,40 @@ void init() {
   spawn_food();
   current_dir = RIGHT;
   tail_len = 0;
-  head.x = 10;
-  head.y = 10;
-  snake[0] = head;
+  head->x = 10;
+  head->y = 10;
+  head = createNode(10, 10);
 }
 
-void draw_head(pos *loc) {
+void draw_head(Node *node) {
   wattron(board, COLOR_PAIR(1));
-  mvwprintw(board, loc->y, loc->x, "0");
+  mvwprintw(board, node->y, node->x, "0");
   wattroff(board, COLOR_PAIR(1));
   wrefresh(board);
 }
+void draw_body(Node *node) { mvwprintw(board, node->y, node->x, "#"); }
 
-void draw_body(pos *loc) { mvwprintw(board, loc->y, loc->x, "#"); }
-
-void clear_print(pos *loc) { mvwprintw(board, loc->y, loc->x, " "); }
+void clear_print(Node *node) { mvwprintw(board, node->y, node->x, " "); }
 void add_segment() {
   tail_len++;
-  pos new_tail;
-  new_tail.x = snake[tail_len - 1].x;
-  new_tail.y = snake[tail_len - 1].y;
+  Node *new_tail = createNode(head->x, head->y);
+
   switch (current_dir) {
   case UP:
-    new_tail.y++;
+    new_tail->y++;
     break;
   case DOWN:
-    new_tail.y--;
+    new_tail->y--;
     break;
   case LEFT:
-    new_tail.x++;
+    new_tail->x++;
     break;
   case RIGHT:
-    new_tail.x--;
+    new_tail->x--;
     break;
   }
-  snake[tail_len] = new_tail;
+  new_tail->next = head;
+  head = new_tail;
 }
 
 void input_handler(char ch) {
@@ -154,8 +152,8 @@ void input_handler(char ch) {
   }
 }
 void move_snake() {
-  head_next.x = snake[0].x;
-  head_next.y = snake[0].y;
+  head_next.x = head->x;
+  head_next.y = head->y;
 
   switch (current_dir) {
   case UP:
@@ -174,14 +172,20 @@ void move_snake() {
 
   // Check if the new head position is valid
   int collision = 0;
-  if (head_next.x >= 0 && head_next.x < (xMax -10) && head_next.y >= 0 &&
-      head_next.y < (yMax -5) ) {
+  if (head_next.x >= 0 && head_next.x < (xMax - 10) && head_next.y >= 0 &&
+      head_next.y < (yMax - 5)) {
     // Check if the new head position is not colliding with the snake's body
-    for (int i = 1; i <= tail_len; i++) {
-      if (head_next.x == snake[i].x && head_next.y == snake[i].y) {
+    Node *current = head->next;
+    // probably will segfault lol
+    for (int i = 1; i <= tail_len - 1; i++) {
+      pos segment;
+      segment.x = current->x;
+      segment.y = current->y;
+      if (head_next.x == segment.x && head_next.y == segment.y) {
         int collision = 1;
         break;
       }
+      current = current->next;
     }
   } else {
     collision = 1;
@@ -189,18 +193,22 @@ void move_snake() {
 
   if (!collision) {
     // Move the snake by shifting each body segment
-    for (int i = tail_len; i > 0; i--) {
-      snake[i] = snake[i - 1];
+    Node *new_head = createNode(head_next.x, head_next.y);
+    new_head->next = head;
+    head = new_head;
+
+    // Remove the tail if not growing
+    if (tail_len > 0) {
+      removeTail(&head);
+      tail_len--;
     }
-    snake[0] = head_next;
   } else {
     game_over = 1;
-  };
+  }
 
-  if (head_next.x == food.x && head_next.y == food.y) {
+  if (head->x == food.x && head->y == food.y) {
     spawn_food();
-    add_segment();
-    score++;
+    tail_len++;
   }
 }
 
@@ -208,16 +216,15 @@ void draw_screen() {
   box(board, 0, 0);
   mvprintw(1, 2, "       ");
   mvprintw(1, 2, "Score: %i", score);
-  mvprintw(1, xMax - 20, "Tail_pos: %i, %i", snake[tail_len].x,
-           snake[tail_len].y);
-  for (int i = 0; i <= tail_len; i++) {
-    if (i == 0) {
-      draw_head(&snake[i]);
+  mvprintw(1, xMax - 20, "Head_pos: %i, %i", head->x, head->y);
+  Node *current = head;
+  while (current != NULL) {
+    if (current == head) {
+      draw_head(current);
     } else {
-      draw_body(&snake[i]);
+      draw_body(current);
     }
-    clear_print(&old_snake[i]);
-    old_snake[i] = snake[i];
+    current = current->next;
   };
   draw_food();
   refresh();
@@ -235,8 +242,7 @@ int main() {
       getch();
       break;
     } else {
-
-      draw_head(&head);
+      draw_head(head);
       input_handler(
           getch()); // handling inputs in a separate function for code clarity
       move_snake();
@@ -247,12 +253,5 @@ int main() {
 
   endwin(); // Restore normal terminal behavior
   nocbreak();
-  printf("%d %d\n", xMax, yMax);
-  printf("%d %d\n", snake[0].x, snake[0].y);
-  for (int i = 0; i < tail_len; i++) {
-    printf("index %d, X %d, Y %d \n", i, snake[i], snake[i].x, snake[i].y);
-    printf("OLD index %d, X %d, Y %d \n", i, old_snake[i], old_snake[i].x,
-           old_snake[i].y);
-  }
   return 0;
 }
